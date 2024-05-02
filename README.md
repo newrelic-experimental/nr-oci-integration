@@ -36,6 +36,89 @@
 
 ## Installation
 
+The integration has two main components can be configured and used separetely: A "Metrics Reporter" function and a "Logs Reporter" function. The instructions to setup the function are mostly similar, they differences are on the OCI Service Connector Hubm where we configure OCI to route the proper telemetry type to the respective function.
+
+https://cloud.oracle.com/functions?region=us-ashburn-1
+
+
+
+Click on "Create Application"
+
+Name your Application (e.g. New Relic OCI Integration)
+
+select the respective Oracle VCN
+
+select the respetive Subnets 
+(the Functions need to be able to post data to our public endpoints)
+
+select Shape: GENERIC_X86 (functions were only tested on X86)
+
+Add tags if necessary
+
+Click on "Create Function"
+
+Name your function: e.g. NewRelic-MetricReporter
+
+Click on Configuration
+
+Add/edit the Environment Properties: 
+NR-METRIC-ENDPOINT: <ADD TO FUNCTION>
+NR-LOG-ENDPOINT: https://log-api.newrelic.com/log/v1 (or respective EU endpoints)
+NEWRELIC_API_KEY: Your API Key
+FORWARD_TO_NR: True
+LOGGING_LEVEL: INFO
+
+
+We suggest using CloudShell for deployment, but you can use other tooling offered by Oracle
+
+fn list context
+
+fn use context us-ashburn-1
+
+fn update context {{YOUR REGISTRY}}
+
+fn update context registry {YOUR REGISTRY}/nr-metric-reporter
+
+Generate Auth Token
+
+Generate Token
+
+docker login -u '{{YOUR CREDS}} iad.ocir.io (use token)
+
+fn init --runtime python nr-metric-reporter
+
+cd nr-metric-reporter/
+
+edit the func.yaml file with the content from the repo
+edit the func.py file with the content from the repo
+edit the requirements.txt file with the content from the repo
+
+fn -v deploy --app NewRelic-MetricReporter
+
+
+Setup Service Connector Hub to Forward Telemetry
+
+https://cloud.oracle.com/connector-hub/service-connectors
+
+Create Connector
+
+Name: e.g. NewRelic-Log-Connector
+Description: This connector streams OCI Logs to a New Relic OCI Integration Function
+Compartment: Select your compartment
+
+Under Configure Connector:
+Source: Select Logging
+Target: Select Functions
+
+Then in Configure Source, select the log groups and logs that will be forwarded to the integration (you can add multiple entries)
+
+(no Log Filter Tasks is needed)
+Configure Task: Leave Empty
+
+Then in Configure Target, select the function application (New Relic OCI Integration) and the function name (nr-log-reporter)
+
+Click on "Create"
+
 > [Include a step-by-step procedure on how to get your code installed. Be sure to include any third-party dependencies that need to be installed separately]
 
 ## Getting Started
