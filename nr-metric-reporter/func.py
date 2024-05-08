@@ -10,18 +10,22 @@ from newrelic_telemetry_sdk import GaugeMetric, CountMetric, SummaryMetric, Metr
 
 # Use OCI Application or Function configurations to override these environment variable defaults.
 
-nr_api_key = os.getenv('NEWRELIC_API_KEY', 'not-configured')
+# NR API Key for authentication. 
+# This is defined in the func.yaml file or on the OCI Function Environment Settings
+nr_api_key = os.getenv('NEWRELIC_API_KEY','not-configured')
 
+# NR API Key for authentication. 
+# This is defined in the func.yaml file or on the OCI Function Environment Settings
 forward_to_nr = eval(os.getenv('FORWARD_TO_NR', "True"))
+
+# Tags that will be added to the metric as attributes
 metric_tag_keys = os.getenv('METRICS_TAG_KEYS', 'name, namespace, displayName, resourceDisplayName, unit')
 metric_tag_set = set()
 
 # Exception stack trace logging
-
-is_tracing = eval(os.getenv('ENABLE_TRACING', "False"))
+is_tracing = os.getenv('ENABLE_TRACING', "False")
 
 # Set all registered loggers to the configured log_level
-
 logging_level = os.getenv('LOGGING_LEVEL', 'INFO')
 loggers = [logging.getLogger()] + [logging.getLogger(name) for name in logging.root.manager.loggerDict]
 [logger.setLevel(logging.getLevelName(logging_level)) for logger in loggers]
@@ -48,11 +52,10 @@ def handler(ctx, data: io.BytesIO = None):
         return
 
     try:
-        logging.getLogger().info('function payload: %s',data.getvalue())
+        logging.getLogger().debug('function payload: %s',data.getvalue())
         metrics_list = json.loads(data.getvalue())
         logging.getLogger().info(preamble.format(ctx.FnName(), len(metrics_list), logging_level, forward_to_nr))
-        #logging.getLogger().debug(metrics_list)
-
+        
         converted_event_list = handle_metric_events(event_list=metrics_list)
         send_to_nr(event_list=converted_event_list)
 
@@ -82,19 +85,19 @@ def transform_metric_to_nr_format(log_record: dict):
 
     metric_list = []
     metricName = get_metric_name(log_record)
-    type = get_metric_type(log_record)
     points = get_metric_points(log_record)
     metricTags = get_metric_tags_nr(log_record)
-
+    
     for datapoints in points:
 
-        #using gauge for all
-        gaugeMetric = GaugeMetric(name=metricName,value=datapoints['value'], tags=metricTags, end_time_ms=datetime.now().timestamp())
+        # using gauge for all
+        gaugeMetric = GaugeMetric(name=metricName,value=datapoints['value'], tags=metricTags, end_time_ms=datapoints['timestamp'])
         metric_list.append(gaugeMetric)
 
     return metric_list
-  
-  def get_metric_name(log_record: dict):
+
+
+def get_metric_name(log_record: dict):
     """
     Assembles a metric name that appears to follow NR conventions.
     :param log_record:
@@ -114,20 +117,6 @@ def camel_case_split(str):
     """
 
     return re.findall(r'[A-Z](?:[a-z]+|[A-Z]*(?=[A-Z]|$))', str)
-
-
-def get_metric_type(log_record: dict):
-    """
-    :param log_record:
-    :return: The type of metric. The available types are 0 (unspecified), 1 (count), 2 (rate), and 3 (gauge).
-    Allowed enum values: 0,1,2,3
-    """
-
-    return 0
-  
-  def get_now_timestamp():
-    return datetime.now().timestamp()
-
 
 def get_metric_points(log_record: dict):
 
@@ -156,6 +145,7 @@ def get_metric_tags_nr(log_record: dict):
         result[tag] = value
 
     return result
+
 def get_metric_tag_set():
     """
     :return: the set metric payload keys that we would like to have converted to tags.
@@ -197,7 +187,7 @@ def get_dictionary_value(dictionary: dict, target_key: str):
                     target_value = get_dictionary_value(dictionary=entry, target_key=target_key)
                     if target_value:
                         return target_value
-
+                    
 
 def send_to_nr (event_list):
     """
@@ -205,40 +195,38 @@ def send_to_nr (event_list):
     :param event_list: list of events in NR format
     :return: None
     """
-    if send_to_nr is False:
+    if forward_to_nr is False:
         logging.getLogger().debug("Metric Reporting is disabled - nothing sent")
         return
-
+    
     try:
-
+        
         metric_client = MetricClient(nr_api_key)
 
-        for metric in event_list:
+        #for metric in event_list:
+        response = metric_client.send_batch(event_list[0])
 
-            response = metric_client.send_batch(event_list[0])
-            logging.getLogger().debug('payload: %s', event_list[0])
+        logging.getLogger().debug('payload: %s', event_list[0])
 
-            if response.status != 202:
-                match response.status:
-                    case 400:
-                        logging.getLogger().error("400 - Structure of the request is invalid.")
-                    case 403:
-                        logging.getLogger().error("403 - Authentication failure.")
-                    case 408:
-                        logging.getLogger().error("408 - The request took too long to reach the endpoint.")
-                    case 411:
-                        logging.getLogger().error("411 - The Content-Length header wasn’t included.")
-                    case 413:
-                        logging.getLogger().error("413 - The payload was too big. Payloads must be under 1MB (10^6 bytes).")
-                    case 429:
-                        logging.getLogger().error("429 - The request rate quota has been exceeded.")
-                    case 431:
-                        logging.getLogger().error("431 - The request headers are too long.")
-                    case _:
-                        logging.getLogger().error('%s - Server Error, please retry.', response.status)
-                raise Exception ('error {} sending to NR: {}'.format(response.status, response.reason))
-
-        #response.raise_for_status()
+        if response.status != 202:
+            match response.status:
+                case 400:
+                    logging.getLogger().error("400 - Structure of the request is invalid.")
+                case 403:
+                    logging.getLogger().error("403 - Authentication failure.")
+                case 408:
+                    logging.getLogger().error("408 - The request took too long to reach the endpoint.")
+                case 411:
+                    logging.getLogger().error("411 - The Content-Length header wasn’t included.")
+                case 413:
+                    logging.getLogger().error("413 - The payload was too big. Payloads must be under 1MB (10^6 bytes).")
+                case 429:
+                    logging.getLogger().error("429 - The request rate quota has been exceeded.")
+                case 431:
+                    logging.getLogger().error("431 - The request headers are too long.")
+                case _:
+                    logging.getLogger().error('%s - Server Error, please retry.', response.status)
+            raise Exception ('error {} sending to NR: {}'.format(response.status, response.reason))
 
     finally:
         metric_client.close()
@@ -256,7 +244,6 @@ def get_dictionary_value(dictionary: dict, target_key: str):
         raise Exception('dictionary None for key'.format(target_key))
 
     target_value = dictionary.get(target_key)
- 
     if target_value:
         return target_value
 
@@ -296,7 +283,7 @@ def local_test_mode(filename):
 
         logging.getLogger().debug(json.dumps(transformed_results, indent=4))
 
-        send_to_nr(event_list=transformed_results)
+        send_to_nr(event_list=transformed_results) 
     logging.getLogger().info("local testing completed")
 
 
