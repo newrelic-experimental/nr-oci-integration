@@ -6,3 +6,10 @@ build_image: fnproject/python:3.11-dev
 run_image: fnproject/python:3.11
 entrypoint: /python/bin/fdk /function/func.py handler
 memory: 256
+config:
+  # NR-METRIC-HOST: metric-api.eu.newrelic.com (Europe)
+  NR-METRIC-HOST: metric-api.newrelic.com
+  NEWRELIC_API_KEY: ABCD1234
+  FORWARD_TO_NR: True
+  ENABLE_TRACING: False
+  LOGGING_LEVEL: INFO
