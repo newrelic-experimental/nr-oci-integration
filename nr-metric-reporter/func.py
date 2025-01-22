@@ -10,6 +10,10 @@ from newrelic_telemetry_sdk import GaugeMetric, CountMetric, SummaryMetric, Metr
 
 # Use OCI Application or Function configurations to override these environment variable defaults.
 
+# NR Metrics Host for the api endpoint. 
+# This is defined in the func.yaml file or on the OCI Function Environment Settings
+nr_metric_host = os.getenv('NR_METRICS_HOST','metric-api.newrelic.com')
+
 # NR API Key for authentication. 
 # This is defined in the func.yaml file or on the OCI Function Environment Settings
 nr_api_key = os.getenv('NEWRELIC_API_KEY','not-configured')
@@ -74,10 +78,12 @@ def handle_metric_events(event_list):
     result_list = []
     for event in event_list:
 
-        single_result = transform_metric_to_nr_format(log_record=event)
-        result_list.append(single_result)
-        logging.getLogger().debug(single_result)
+        points = transform_metric_to_nr_format(log_record=event)
+        logging.getLogger().debug(points)
 
+        for point in points:
+            result_list.append(point)
+            
     return result_list
 
 
@@ -201,12 +207,12 @@ def send_to_nr (event_list):
     
     try:
         
-        metric_client = MetricClient(nr_api_key)
+        metric_client = MetricClient(nr_api_key, host=nr_metric_host)
 
         #for metric in event_list:
-        response = metric_client.send_batch(event_list[0])
+        response = metric_client.send_batch(event_list)
 
-        logging.getLogger().debug('payload: %s', event_list[0])
+        logging.getLogger().debug('payload: %s', event_list)
 
         if response.status != 202:
             match response.status:
